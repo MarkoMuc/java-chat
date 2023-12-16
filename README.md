@@ -1,6 +1,6 @@
 # Simple Java Chat Server and Client
 
-This was only tested on Windows. Im not sure where parts of the code were sourced from.
+I'm not sure where the Server and Client connection and all messaging code are sourced from. The JSON and other commands are what I added.
 
 - `!?` to get commands.
 - `!w [user]` to whisper/private message.
