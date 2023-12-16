@@ -10,7 +10,7 @@ public class ChatServer {
 
 	protected int serverPort = 8888;
 	protected List<Socket> clients = new ArrayList<Socket>(); // list of clients
-	private ChatServerConnector conn_delete_name;//Za brisanje imen uporabnikov, potem ko se uporabnik odklopi
+	private ChatServerConnector conn_delete_name;//To delete usernames
 
 	public static void main(String[] args) throws Exception {
 		new ChatServer();
@@ -72,7 +72,7 @@ public class ChatServer {
 		}
 	}
 
-	//Za posiljanje eni osebi(sebi(Server sporočila)/drugemu)
+	//To send only one person (self(Server msg)/someone else)
 	public void sendToClient(String message, int port){
 		Iterator<Socket> i = clients.iterator();
 		Socket sendTo=null;
@@ -96,7 +96,7 @@ public class ChatServer {
 	public void removeClient(Socket socket) {
 		synchronized(this) {
 			clients.remove(socket);
-			conn_delete_name.odstrani_uporabnika(socket.getPort());//odstrani ime uporabnika
+			conn_delete_name.RemoveUser(socket.getPort());//Remove username
 		}
 	}
 }
@@ -104,10 +104,10 @@ public class ChatServer {
 class ChatServerConnector extends Thread {
 	private ChatServer server;
 	private Socket socket;
-	private String[] ukazi={"!a [ime] -->dodajanje imena","!w [prejemnik] -->zasebno sporocilo(whisper)","!u -->vsi uporabniki","!n -->uporabnikovo ime","!? -->ukazi"}; 
-	///Za shranjevanje imen uporabnikov
-	protected static Map<String,Integer> imena=new HashMap<>();
-	//Za transformacijo iz String(vhodno sporočilo) v JSONObject, ki bo nato uporabljen
+	private String[] commands={"!a [username] -->add name","!w [username] -->whisper","!u -->all users","!n -->username","!? -->commands"}; 
+	// To save usernames
+	protected static Map<String,Integer> names=new HashMap<>();
+	//To transform String(in msg) to JSONObject
 	private JSONParser parser=new JSONParser();
 
 	public ChatServerConnector(ChatServer server, Socket socket) {
@@ -148,11 +148,11 @@ class ChatServerConnector extends Thread {
 			if(((String)message.get("type")).equals("private")){
 				server_command(message);
 			}else{
-				message=dodajIme_Pos(message);
+				message=AddNameSender(message);
 				
-				//Preverimo, ali ima pošiljatelj ime
+				//Check if sender has a username
 				if(((String)message.get("name")).equals("")){
-					String errMessage="Nimas se dolocenega imena !a [ime], da si ga nastaviš!";
+					String errMessage="No username: !a [username], to set it!";
 					send_err(message, errMessage, this.socket.getPort());
 					continue;
 				}
@@ -169,28 +169,28 @@ class ChatServerConnector extends Thread {
 	}
 
 
-	//Za odstranjevanje uporabnika
-	public void odstrani_uporabnika(int port){
-		String ime="";
-		if(imena.containsValue(port)){
-			for(Map.Entry<String,Integer> set: imena.entrySet()){
+	//To remove users
+	public void RemoveUser(int port){
+		String name="";
+		if(names.containsValue(port)){
+			for(Map.Entry<String,Integer> set: names.entrySet()){
 				if(set.getValue()==port){
-					ime+=set.getKey();
+					name+=set.getKey();
 					break;
 				}
 			}
 
 			synchronized(this){
-				imena.remove(ime);
+				names.remove(name);
 			}
 
 			try{
-				JSONObject sporocilo=new JSONObject();
-				sporocilo.put("type","public");
-				sporocilo.put("name","Server");
-				sporocilo.put("time",LocalTime.now().withNano(0).toString());
-				sporocilo.put("message","Oseba "+ime+" je zapustila pogovor!");
-				this.server.sendToAllClients(sporocilo.toString());
+				JSONObject messageJSON=new JSONObject();
+				messageJSON.put("type","public");
+				messageJSON.put("name","Server");
+				messageJSON.put("time",LocalTime.now().withNano(0).toString());
+				messageJSON.put("message","User "+name+" Left!");
+				this.server.sendToAllClients(messageJSON.toString());
 			}catch(Exception e){
 				System.err.println("[system] there was a problem while sending the message to all clients");
 				e.printStackTrace(System.err);
@@ -198,7 +198,7 @@ class ChatServerConnector extends Thread {
 		}
 	}
 
-	//Za posiljanje error sporocil 
+	//To send error messages
 	private void send_err(JSONObject message,String errMessage,int port){
 		message.put("type","Error");
 		message.put("name","Server");
@@ -206,9 +206,9 @@ class ChatServerConnector extends Thread {
 		this.server.sendToClient(message.toString(),port);
 	}
 
-	//Obravnavanje ukazov(dodajanje imena, privatna sporocila, itd..)
-	private void server_command(JSONObject vhodniObj){
-		String message=(String) vhodniObj.get("message");
+	//ServerCommands
+	private void server_command(JSONObject inObj){
+		String message=(String) inObj.get("message");
 		String command=message.substring(1,2).toLowerCase();
 
 		if(message.indexOf(' ')!=-1){
@@ -218,39 +218,39 @@ class ChatServerConnector extends Thread {
 		switch(command){
 			case "a":
 
-				//Preverjanje dolzine sporocila(brez imena)
+				//No name
 				if(message.length()==2){
-					String errMessage="Vpisi veljavno ime";
-					send_err(vhodniObj,errMessage,this.socket.getPort());
+					String errMessage="Input name";
+					send_err(inObj,errMessage,this.socket.getPort());
 					break;
 				}
 
-				String ime=message.substring(message.indexOf(' ')+1);
+				String name=message.substring(message.indexOf(' ')+1);
 
-				//Preverjanje imena(ne sme vsebovati presledkov)
-				if(ime.indexOf(' ')!=-1){
-					String errMessage="Ime mora biti brez presledkov!";
-					send_err(vhodniObj,errMessage, this.socket.getPort());
+				//CheckName
+				if(name.indexOf(' ')!=-1){
+					String errMessage="No space in name!";
+					send_err(inObj,errMessage, this.socket.getPort());
 					break;
 				}
 
-				//Dodajanje osebe
+				//Add user
 				synchronized(this){
-					if(imena.containsKey(ime) || imena.containsValue(this.socket.getPort())){
-						String errMessage="Oseba s tem imenom ze obstaja!(!a [ime] za novo ime) \n\tali pa ze imas doloceno ime!(preveri s !n)";
-						send_err(vhodniObj,errMessage, this.socket.getPort());
+					if(names.containsKey(name) || names.containsValue(this.socket.getPort())){
+						String errMessage="User exists!(!a [username] for new name) \n\tOr you already have a name!(check with !n)";
+						send_err(inObj,errMessage, this.socket.getPort());
 						break;
 					}else{
-						imena.put(ime,this.socket.getPort());
+						names.put(name,this.socket.getPort());
 					}
 				}
 
-				//Sporocilo vsem uporabnikom o pridruzitvi novega uporabnika
+				//Message all users
 				try {
-					message="Pridruzila se je oseba z imenom: "+ime;
-					vhodniObj.put("name","Server");
-					vhodniObj.put("message",message);
-					this.server.sendToAllClients(vhodniObj.toString());
+					message="User joined: "+name;
+					inObj.put("name","Server");
+					inObj.put("message",message);
+					this.server.sendToAllClients(inObj.toString());
 				} catch (Exception e) {
 					System.err.println("[system] there was a problem while sending the message to all clients");
 					e.printStackTrace(System.err);
@@ -258,14 +258,14 @@ class ChatServerConnector extends Thread {
 				break;
 
 			case "w":
-				String prejemnik=null;
+				String recipient=null;
 
-				//Pridobivanje imena prejemnika
+				//recipient
 				try{
-					prejemnik=message.substring(0,message.indexOf(' '));
+					recipient=message.substring(0,message.indexOf(' '));
 				}catch(StringIndexOutOfBoundsException e1){
-					String error="Prazno sporocilo";
-					send_err(vhodniObj,error, this.socket.getPort());
+					String error="Empty message";
+					send_err(inObj,error, this.socket.getPort());
 					break;
 				}
 
@@ -273,99 +273,95 @@ class ChatServerConnector extends Thread {
 
 				//Posiljanje sporocila
 				try{
-					vhodniObj.put("message",message);
-					vhodniObj=dodajIme_Pos(vhodniObj);
+					inObj.put("message",message);
+					inObj=AddNameSender(inObj);
 
 					//V primeru, da pošiljatelj še nima imena
-					if(((String)vhodniObj.get("name")).equals("")){
-						String errMessage="Nimas se dolocenega imena !a [ime], da si ga nastaviš!";
-						send_err(vhodniObj, errMessage, this.socket.getPort());
+					if(((String)inObj.get("name")).equals("")){
+						String errMessage="No username !a [username], to set it!";
+						send_err(inObj, errMessage, this.socket.getPort());
 						break;
 					}
 
-					this.server.sendToClient(vhodniObj.toString(), imena.get(prejemnik));
+					this.server.sendToClient(inObj.toString(), names.get(recipient));
 				}catch(NullPointerException e2){
-					String error="Oseba "+prejemnik+" ne obstaja!";
-					send_err(vhodniObj,error, this.socket.getPort());
+					String error="User "+recipient+" doesn't exist!";
+					send_err(inObj,error, this.socket.getPort());
 				}
 
 				break;
 
 			case "?":
-				String sporocilo="";
+				String messageOut="";
 
-				//Zbiranje in pošiljanje ukazov
-				for(int i=0;i<ukazi.length;i++){
-					sporocilo+="\n\t"+ukazi[i];
+				for(int i=0;i<commands.length;i++){
+					messageOut+="\n\t"+commands[i];
 				}
 
-				vhodniObj.put("name","Server");
-				vhodniObj.put("message",sporocilo);
-				this.server.sendToClient(vhodniObj.toString(), this.socket.getPort());
+				inObj.put("name","Server");
+				inObj.put("message",messageOut);
+				this.server.sendToClient(inObj.toString(), this.socket.getPort());
 
 				break;
 			
 			case "n":
-				//Vračanje imena
-				if(imena.containsValue(this.socket.getPort())){
-					String imeUporabnik="Tvoje ime je: ";
-					for(Map.Entry<String,Integer> set: imena.entrySet()){
+				if(names.containsValue(this.socket.getPort())){
+					String username="Your name is: ";
+					for(Map.Entry<String,Integer> set: names.entrySet()){
 						if(set.getValue()==this.socket.getPort()){
-							imeUporabnik+=set.getKey();
+							username+=set.getKey();
 							break;
 						}
 					}
-					vhodniObj.put("name","Server");
-					vhodniObj.put("message",imeUporabnik);
-					this.server.sendToClient(vhodniObj.toString(),this.socket.getPort());
+					inObj.put("name","Server");
+					inObj.put("message",username);
+					this.server.sendToClient(inObj.toString(),this.socket.getPort());
 				}else{
-					String errMessage="Nimas se imena, dodaj ime s !a [ime]";
-					send_err(vhodniObj,errMessage, this.socket.getPort());
+					String errMessage="No username add it with !a [ime]";
+					send_err(inObj,errMessage, this.socket.getPort());
 				}
 
 				break;
 			
 			case "u":
-				//Vračanje uporabnikov
-				if(!imena.isEmpty()){
-					String uporabniki="Trenutni uporabniki: ";
-					for(Map.Entry<String,Integer> set: imena.entrySet()){
-						uporabniki+="\n\t"+set.getKey();
+				if(!names.isEmpty()){
+					String users="Current Users: ";
+					for(Map.Entry<String,Integer> set: names.entrySet()){
+						users+="\n\t"+set.getKey();
 						if(set.getValue()==this.socket.getPort()){
-							uporabniki+="(ti)";
+							users+="(you)";
 						}
 					}
-					vhodniObj.put("name","Server");
-					vhodniObj.put("message",uporabniki);
-					this.server.sendToClient(vhodniObj.toString(),this.socket.getPort());
+					inObj.put("name","Server");
+					inObj.put("message",users);
+					this.server.sendToClient(inObj.toString(),this.socket.getPort());
 				}else{
-					String error="Ni uporabnikov!";
-					send_err(vhodniObj,error, this.socket.getPort());
+					String error="No users!";
+					send_err(inObj,error, this.socket.getPort());
 				}
 
 				break;
 
 			default:
-				//V primeru neveljavnega/neobstoječega ukaza
 				String error="No such command, !? for list of commands!";
-				send_err(vhodniObj,error, this.socket.getPort());
+				send_err(inObj,error, this.socket.getPort());
 
 				break;
 		}
 	}
 	
 	//Doda ime pošiljatelja
-	private JSONObject dodajIme_Pos(JSONObject message){
-		String ime="";
-		if(imena.containsValue(this.socket.getPort())){
-			for(Map.Entry<String,Integer> set: imena.entrySet()){
+	private JSONObject AddNameSender(JSONObject message){
+		String name="";
+		if(names.containsValue(this.socket.getPort())){
+			for(Map.Entry<String,Integer> set: names.entrySet()){
 				if(set.getValue()==this.socket.getPort()){
-					ime=set.getKey();
+					name=set.getKey();
 					break;
 				}
 			}
 		}
-		message.put("name",ime);
+		message.put("name",name);
 		return message;
 	}
 }

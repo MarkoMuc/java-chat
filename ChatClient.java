@@ -19,7 +19,7 @@ public class ChatClient extends Thread
 		DataOutputStream out = null;
 
 		BufferedReader std_in = new BufferedReader(new InputStreamReader(System.in));
-		System.out.println("Vpisi ime");
+		System.out.println("Input Username.");
 		String name= std_in.readLine();
 
 		// connect to the chat server
@@ -29,8 +29,8 @@ public class ChatClient extends Thread
 			in = new DataInputStream(socket.getInputStream()); // create input stream for listening for incoming messages
 			out = new DataOutputStream(socket.getOutputStream()); // create output stream for sending messages
 			System.out.println("[system] connected");
-
-			//posiljanje imena
+				
+			//Send name
 			this.sendMessage("!a "+name, out);
 
 			ChatClientMessageReceiver message_receiver = new ChatClientMessageReceiver(in); // create a separate thread for listening to messages from the chat server
@@ -54,7 +54,7 @@ public class ChatClient extends Thread
 	}
 
 	private void sendMessage(String message, DataOutputStream out) {
-		JSONObject JSONMessage=obdelajSporocilo(message);
+		JSONObject JSONMessage=StartParseMessage(message);
 		try {
 			out.writeUTF(JSONMessage.toString()); // send the message to the chat server
 			out.flush(); // ensure the message has been sent
@@ -64,22 +64,22 @@ public class ChatClient extends Thread
 		}
 	}
 
-	//Obdelava sporocila
-	private JSONObject obdelajSporocilo(String message){
-		JSONObject sporocilo=new JSONObject();
+	// Parse message
+	private JSONObject StartParseMessage(String message){
+		JSONObject messageJSON=new JSONObject();
 
-		//privatna sporočila so ukazi(vključno s whisper)
+		//Private messages are commands(including whisper)
 		if(message.charAt(0)=='!' && message.length()!=1){
-			sporocilo.put("type","private");
+			messageJSON.put("type","private");
 		}else{
-			sporocilo.put("type","public");
+			messageJSON.put("type","public");
 		}
 
-		sporocilo.put("name","N/A");//ime pošiljatelja bo dodal server!
-		sporocilo.put("time",LocalTime.now().withNano(0).toString());
-		sporocilo.put("message",message);
+		messageJSON.put("name","N/A");// Server adds username
+		messageJSON.put("time",LocalTime.now().withNano(0).toString());
+		messageJSON.put("message",message);
 
-		return sporocilo;
+		return messageJSON;
 	}
 }
 
@@ -87,7 +87,7 @@ public class ChatClient extends Thread
 class ChatClientMessageReceiver extends Thread {
 	private DataInputStream in;
 
-	//Za transformacijo iz String(vhodno sporočilo) v JSONObject, ki bo nato uporabljen
+	//To transform from String(message in) to JSONObject
 	private JSONParser parser=new JSONParser();
 
 	public ChatClientMessageReceiver(DataInputStream in) {
@@ -98,9 +98,9 @@ class ChatClientMessageReceiver extends Thread {
 		try {
 			String message;
 			while ((message = this.in.readUTF()) != null) { // read new message
-				JSONObject sporocilo=new JSONObject();
-				sporocilo=(JSONObject)parser.parse(message);
-				System.out.println(obdelava_sporocila(sporocilo)); // print the message to the console
+				JSONObject messageJSON=new JSONObject();
+				messageJSON=(JSONObject)parser.parse(message);
+				System.out.println(EndMessageParse(messageJSON)); // print the message to the console
 			}
 		} catch (Exception e) {
 			System.err.println("[!system!] could not read message");
@@ -109,8 +109,8 @@ class ChatClientMessageReceiver extends Thread {
 		}
 	}
 
-	//Obdelava končnega sporočila
-	private String obdelava_sporocila(JSONObject message){
+	//Parse end message
+	private String EndMessageParse(JSONObject message){
 		//[time name]: message
 		return String.format("[%s %s]: %s",(String)message.get("time"),
 		(String)message.get("name"),(String)message.get("message"));
